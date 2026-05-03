@@ -218,10 +218,17 @@ ipcMain.handle('fetch-models-list', async () => {
 });
 
 // ─── Launch Codex CLI ───
+const CODEX_EXE = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.429.3425.0_x64__2p2nqsd0c76g0\\app\\Codex.exe';
+
 ipcMain.handle('launch-codex', () => {
   try {
-    // Open a new terminal window running codex
-    exec('start cmd /k codex', { cwd: os.homedir() });
+    const { execFile } = require('child_process');
+    if (fs.existsSync(CODEX_EXE)) {
+      execFile(CODEX_EXE, [], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      // Fallback: try running 'codex' from PATH
+      exec('start cmd /k codex', { cwd: os.homedir() });
+    }
     return { success: true };
   } catch (e) {
     return { error: e.message };
