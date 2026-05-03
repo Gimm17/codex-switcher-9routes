@@ -132,17 +132,6 @@ codex-switcher/
 
 ---
 
-## 🎨 Color Palette
-
-| Color | Hex | Usage |
-|-------|-----|-------|
-| ![#FBF3D5](https://via.placeholder.com/12/FBF3D5/FBF3D5.png) Cream | `#FBF3D5` | Background |
-| ![#D6A99D](https://via.placeholder.com/12/D6A99D/D6A99D.png) Rose | `#D6A99D` | Accents, current model indicator |
-| ![#D6DAC8](https://via.placeholder.com/12/D6DAC8/D6DAC8.png) Sage | `#D6DAC8` | Secondary elements |
-| ![#9CAFAA](https://via.placeholder.com/12/9CAFAA/9CAFAA.png) Teal | `#9CAFAA` | Primary buttons, active states |
-
----
-
 ## 🔧 Config yang Diubah
 
 Saat kamu klik **Apply**, app hanya mengubah field berikut di `~/.codex/config.toml`:
@@ -157,16 +146,6 @@ model = "cx/gpt-5.5"                    # ← mengikuti model utama
 ```
 
 > **Sections lain TIDAK disentuh:** `[projects.*]`, `[marketplaces.*]`, `[plugins.*]`, `[windows]` — semua aman.
-
----
-
-## 📜 API Source
-
-Model list diambil dari endpoint publik **9Router**:
-
-```
-GET https://api.tokito.xyz/v1/models
-```
 
 ---
 
