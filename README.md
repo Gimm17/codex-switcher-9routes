@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/license-MIT-FBF3D5?style=flat-square" alt="License">
 </p>
 
+<p align="center">
+  <img src="assets/screenshot.webp" width="700" alt="Codex Switcher Screenshot" style="border-radius:12px;">
+</p>
+
 ---
 
 ## ✨ Fitur
