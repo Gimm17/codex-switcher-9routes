@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.bak
+*.blockmap
+builder-debug.yml
+.icon-ico/

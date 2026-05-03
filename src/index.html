@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codex Switcher</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Titlebar -->
+<div class="titlebar">
+  <div class="titlebar-logo">
+    <div class="dot"></div>
+    CODEX SWITCHER
+    <span class="version-tag">v2</span>
+  </div>
+  <div class="titlebar-path" id="config-path-display">~/.codex/config.toml</div>
+  <div class="win-controls">
+    <button class="win-btn btn-min" onclick="window.api.minimize()" title="Minimize">─</button>
+    <button class="win-btn btn-max" onclick="window.api.maximize()" title="Maximize">□</button>
+    <button class="win-btn btn-close" onclick="window.api.close()" title="Close">✕</button>
+  </div>
+</div>
+
+<!-- Body -->
+<div class="app-body">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="nav-item active" data-page="models" onclick="switchPage('models', this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/>
+        <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5"/>
+        <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5"/>
+        <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/>
+      </svg>
+      Models
+    </div>
+    <div class="nav-item" data-page="auth" onclick="switchPage('auth', this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1a3 3 0 100 6 3 3 0 000-6z" fill="currentColor" opacity="0.9"/>
+        <path d="M11 9H5a3 3 0 00-3 3v1h12v-1a3 3 0 00-3-3z" fill="currentColor" opacity="0.6"/>
+      </svg>
+      Auth / API Key
+    </div>
+    <div class="nav-item" data-page="config" onclick="switchPage('config', this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none">
+        <path d="M1 3h14M1 8h14M1 13h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Raw Config
+    </div>
+
+    <div class="sidebar-bottom">
+      <button class="run-codex-btn" onclick="window.api.launchCodex()" title="Buka Codex CLI di terminal">
+        <span class="play-icon">▶</span> Run Codex
+      </button>
+      <div class="status-badge" style="margin-top:8px;">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Memuat...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main area -->
+  <div class="main">
+
+    <!-- MODELS PAGE -->
+    <div class="page active" id="page-models">
+      <div class="page-header">
+        <div class="page-title">Pilih Model</div>
+        <div class="page-sub">Klik model → preview → Apply untuk update config.toml (hanya field model yang berubah)</div>
+      </div>
+      <div class="current-model-bar">
+        <span class="current-model-label">Model aktif:</span>
+        <span class="current-model-val" id="current-model-display">memuat...</span>
+        <button class="refresh-btn" id="refresh-models-btn" onclick="loadModelsFromAPI()" title="Refresh dari API">↻</button>
+      </div>
+      <div class="controls-row">
+        <input class="search-box" type="text" id="model-search" placeholder="Cari model..." oninput="renderModels()">
+      </div>
+      <div class="filter-pills" id="filter-pills"></div>
+      <div class="options-row">
+        <div class="option-group">
+          <span class="option-label">Reasoning</span>
+          <select class="option-select" id="reasoning-effort-select">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div class="option-group">
+          <span class="option-label">Personality</span>
+          <select class="option-select" id="personality-select">
+            <option value="pragmatic" selected>Pragmatic</option>
+            <option value="concise">Concise</option>
+            <option value="detailed">Detailed</option>
+            <option value="pedagogical">Pedagogical</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;flex:1;overflow:hidden;">
+        <div class="models-grid" id="models-grid"></div>
+        <div class="preview-panel">
+          <div class="preview-header">Preview Perubahan</div>
+          <div class="preview-body" id="preview-body">
+            <div class="preview-empty">Pilih model<br>untuk preview</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUTH PAGE -->
+    <div class="page" id="page-auth">
+      <div class="page-header">
+        <div class="page-title">Auth & API Key</div>
+        <div class="page-sub">Konfigurasi auth.json untuk 9Router</div>
+      </div>
+      <div class="auth-form">
+        <div class="form-group">
+          <div class="form-label">API Key (OPENAI_API_KEY)</div>
+          <input class="form-input" type="password" id="api-key-input" placeholder="sk-xxxxxxxxxxxxxxxx">
+          <div class="form-hint">Key ini disimpan sebagai OPENAI_API_KEY di auth.json</div>
+        </div>
+        <div class="form-group">
+          <div class="form-label">Base URL</div>
+          <input class="form-input" type="text" id="base-url-input" value="https://api.tokito.xyz/v1">
+        </div>
+        <div class="form-group">
+          <div class="form-label">Wire API</div>
+          <select class="form-input" id="wire-api-select" style="cursor:pointer;">
+            <option value="responses">responses (default)</option>
+            <option value="chat">chat</option>
+          </select>
+        </div>
+        <button class="save-auth-btn" onclick="saveAuth()" id="save-auth-btn">Simpan auth.json</button>
+        <div class="form-group">
+          <div class="form-label">Test Koneksi</div>
+          <button class="btn-sec" onclick="testConnection()" id="test-conn-btn" style="align-self:flex-start;">Ping API</button>
+          <div class="form-hint" id="test-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIG PAGE -->
+    <div class="page" id="page-config">
+      <div class="page-header">
+        <div class="page-title">Raw Config</div>
+        <div class="page-sub">Edit manual config.toml dan auth.json — <strong>hati-hati, ini overwrite penuh!</strong></div>
+      </div>
+      <div class="config-area">
+        <div style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace;">config.toml</div>
+        <textarea class="config-textarea" id="raw-config" spellcheck="false"></textarea>
+        <div class="btn-row">
+          <button class="btn-sec" onclick="loadRawConfig()">Reload</button>
+          <button class="btn-pri" onclick="saveRawConfig()">Simpan config.toml</button>
+        </div>
+        <div style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:8px;">auth.json</div>
+        <textarea class="config-textarea" id="raw-auth" spellcheck="false" style="flex:0;height:120px;"></textarea>
+        <div class="btn-row">
+          <button class="btn-pri" onclick="saveRawAuth()">Simpan auth.json</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <div class="toast-icon" id="toast-icon"></div>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
