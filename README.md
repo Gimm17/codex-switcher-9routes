@@ -155,7 +155,7 @@ model = "cx/gpt-5.5"                    # ← mengikuti model utama
 
 ## 📄 License
 
-MIT © [Gimora Digital](https://github.com/Gimm17)
+MIT © [Gimora Digital](https://gimora.my.id/)
 
 ---
 
