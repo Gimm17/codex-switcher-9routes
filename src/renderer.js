@@ -60,6 +60,7 @@ const BADGE_COLORS = {
   cx: '#9CAFAA', ag: '#D6A99D', gc: '#8BB0C4',
   glm: '#D6DAC8', minimax: '#C4A0B5', combo: '#b8b4a0'
 };
+const DEFAULT_BASE_URL = 'https://api2.tokito.xyz/v1';
 
 // ─── State ───
 let models = [...FALLBACK_MODELS];
@@ -105,6 +106,8 @@ async function init() {
   const baseMatch = data.config.match(/base_url\s*=\s*"(.+?)"/);
   if (baseMatch) {
     document.getElementById('base-url-input').value = baseMatch[1];
+  } else {
+    document.getElementById('base-url-input').value = DEFAULT_BASE_URL;
   }
 
   // Parse API key from auth.json (support OPENAI_API_KEY flat format)
@@ -147,7 +150,7 @@ async function loadModelsFromAPI() {
     } else {
       // Keep fallback
       if (!modelsFromAPI) {
-        showToast('Gagal fetch API, pakai list offline', 'error');
+        showToast('Gagal fetch API: ' + (res.error || 'pakai list offline'), 'error');
       }
     }
   } catch (e) {
@@ -326,34 +329,47 @@ async function saveAuth() {
   btn.disabled = true;
   btn.textContent = 'Menyimpan...';
 
-  const key = document.getElementById('api-key-input').value.trim();
-
-  // Use the flat OPENAI_API_KEY format that Codex actually reads
-  const authObj = {
-    auth_mode: 'apikey',
-    OPENAI_API_KEY: key,
-  };
-
-  const result = await window.api.writeAuth(JSON.stringify(authObj, null, 2));
-
-  btn.disabled = false;
-  btn.textContent = 'Simpan auth.json';
-
-  if (result.success) {
-    // Also update base_url and wire_api in config.toml
-    const baseUrl = document.getElementById('base-url-input').value.trim();
+  try {
+    const key = document.getElementById('api-key-input').value.trim();
+    const baseUrl = document.getElementById('base-url-input').value.trim() || DEFAULT_BASE_URL;
     const wire = document.getElementById('wire-api-select').value;
-    wireApi = wire;
 
-    await window.api.patchConfig({
+    // Use the flat OPENAI_API_KEY format that Codex actually reads
+    const authObj = {
+      auth_mode: 'apikey',
+      OPENAI_API_KEY: key,
+    };
+
+    const authResult = await window.api.writeAuth(JSON.stringify(authObj, null, 2));
+    if (!authResult.success) {
+      showToast('Gagal simpan auth: ' + authResult.error, 'error');
+      return;
+    }
+
+    const configResult = await window.api.patchConfig({
       wire_api: wire,
       base_url: baseUrl,
       model_provider: '9router',
     });
 
+    if (!configResult.success) {
+      showToast('auth.json tersimpan, config gagal: ' + configResult.error, 'error');
+      return;
+    }
+
+    wireApi = wire;
+    document.getElementById('base-url-input').value = baseUrl;
+
+    const data = await window.api.readConfig();
+    if (!data.error) {
+      document.getElementById('raw-config').value = data.config;
+      document.getElementById('raw-auth').value = data.auth;
+    }
+
     showToast('auth.json & config disimpan!', 'success');
-  } else {
-    showToast('Gagal simpan auth: ' + result.error, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Simpan auth.json';
   }
 }
 
@@ -368,7 +384,8 @@ async function testConnection() {
   el.style.color = 'var(--text3)';
   el.textContent = 'Menghubungi API...';
 
-  const res = await window.api.fetchModels(key);
+  const baseUrl = document.getElementById('base-url-input').value.trim() || DEFAULT_BASE_URL;
+  const res = await window.api.fetchModels({ apiKey: key, baseUrl });
 
   btn.disabled = false;
   btn.textContent = 'Ping API';
@@ -379,6 +396,29 @@ async function testConnection() {
   } else {
     el.style.color = 'var(--red)';
     el.textContent = 'Gagal: ' + res.error;
+  }
+}
+
+// Launch the installed Codex desktop app.
+async function launchCodex() {
+  const btn = document.getElementById('run-codex-btn');
+  const originalHtml = btn.innerHTML;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="play-icon">&#9658;</span> Membuka...';
+
+  try {
+    const res = await window.api.launchCodex();
+    if (res.success) {
+      showToast('Codex dibuka', 'success');
+    } else {
+      showToast('Gagal buka Codex: ' + res.error, 'error');
+    }
+  } catch (e) {
+    showToast('Gagal buka Codex: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
   }
 }
 

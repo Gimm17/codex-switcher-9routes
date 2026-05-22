@@ -176,6 +176,7 @@ body {
 }
 .run-codex-btn:hover { background: var(--accent2); transform: translateY(-1px); }
 .run-codex-btn:active { transform: translateY(0); }
+.run-codex-btn:disabled { background: var(--bg4); color: var(--text3); cursor: not-allowed; transform: none; }
 .run-codex-btn .play-icon { font-size: 10px; }
 
 /* ─── Main ─── */

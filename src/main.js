@@ -3,11 +3,13 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
-const { exec } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const CODEX_DIR = path.join(os.homedir(), '.codex');
 const CONFIG_PATH = path.join(CODEX_DIR, 'config.toml');
 const AUTH_PATH = path.join(CODEX_DIR, 'auth.json');
+const MODEL_PROVIDER = '9router';
+const DEFAULT_BASE_URL = 'https://api2.tokito.xyz/v1';
 
 // smol-toml for proper TOML parse/stringify
 let TOML;
@@ -18,6 +20,132 @@ try {
 }
 
 let mainWindow = null;
+
+function normalizeBaseUrl(baseUrl) {
+  let value = (typeof baseUrl === 'string' && baseUrl.trim()) ? baseUrl.trim() : DEFAULT_BASE_URL;
+  value = value.replace(/\/+$/, '');
+  if (value.endsWith('/models')) {
+    value = value.slice(0, -'/models'.length);
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (e) {
+    throw new Error('Invalid Base URL: ' + value);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Invalid Base URL protocol: ' + parsed.protocol);
+  }
+
+  return value;
+}
+
+function readParsedConfig() {
+  if (!TOML || !fs.existsSync(CONFIG_PATH)) return {};
+  return TOML.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+}
+
+function readConfiguredBaseUrl() {
+  try {
+    const parsed = readParsedConfig();
+    const providerKey = parsed.model_provider || MODEL_PROVIDER;
+    return parsed.model_providers?.[providerKey]?.base_url || DEFAULT_BASE_URL;
+  } catch (e) {
+    return DEFAULT_BASE_URL;
+  }
+}
+
+function readApiKey() {
+  if (!fs.existsSync(AUTH_PATH)) return '';
+
+  try {
+    const auth = JSON.parse(fs.readFileSync(AUTH_PATH, 'utf8'));
+    return auth.OPENAI_API_KEY || auth?.providers?.[MODEL_PROVIDER]?.api_key || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function fetchModelsFromApi(apiKey, baseUrl) {
+  return new Promise((resolve) => {
+    let modelsUrl;
+    try {
+      modelsUrl = new URL(normalizeBaseUrl(baseUrl) + '/models');
+    } catch (e) {
+      resolve({ error: e.message });
+      return;
+    }
+
+    const headers = {};
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
+    const req = https.request({
+      hostname: modelsUrl.hostname,
+      path: modelsUrl.pathname + modelsUrl.search,
+      method: 'GET',
+      headers,
+      timeout: 10000,
+    }, (res) => {
+      let body = '';
+      res.on('data', (d) => (body += d));
+      res.on('end', () => {
+        const bodyPrefix = (body || '').trim().slice(0, 200);
+        const host = modelsUrl.hostname;
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          resolve({
+            error: `HTTP ${res.statusCode} from ${host}: ${bodyPrefix || res.statusMessage || 'empty response'}`,
+          });
+          return;
+        }
+
+        try {
+          resolve({ success: true, data: JSON.parse(body), baseUrl: normalizeBaseUrl(baseUrl) });
+        } catch (parseErr) {
+          resolve({ error: `Invalid JSON from ${host}: ${bodyPrefix || parseErr.message}` });
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ error: `Request timeout (10s) from ${modelsUrl.hostname}` });
+    });
+    req.on('error', (e) => resolve({ error: e.message }));
+    req.end();
+  });
+}
+
+function resolveCodexExe() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      resolve({ error: 'Run Codex currently supports the Windows OpenAI.Codex package only' });
+      return;
+    }
+
+    const command = 'Get-AppxPackage OpenAI.Codex -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty InstallLocation';
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], { windowsHide: true }, (error, stdout, stderr) => {
+      const installLocation = stdout.trim();
+      if (error || !installLocation) {
+        const detail = (stderr || error?.message || '').trim();
+        resolve({ error: detail || 'OpenAI.Codex package not found' });
+        return;
+      }
+
+      const codexExe = path.join(installLocation, 'app', 'Codex.exe');
+      if (!fs.existsSync(codexExe)) {
+        resolve({ error: 'Codex.exe not found at ' + codexExe });
+        return;
+      }
+
+      resolve({ success: true, path: codexExe });
+    });
+  });
+}
 
 // ─── Window Controls (registered ONCE, outside createWindow) ───
 ipcMain.on('win-minimize', () => mainWindow?.minimize());
@@ -83,7 +211,7 @@ ipcMain.handle('patch-config', (_, updates) => {
       if (!parsed.model_providers[providerKey]) {
         parsed.model_providers[providerKey] = {
           name: '9Router',
-          base_url: 'https://api.tokito.xyz/v1',
+          base_url: DEFAULT_BASE_URL,
         };
       }
       parsed.model_providers[providerKey].wire_api = updates.wire_api;
@@ -141,95 +269,63 @@ ipcMain.handle('write-auth', (_, authContent) => {
 });
 
 // ─── Fetch models from 9Router API (with timeout) ───
-ipcMain.handle('fetch-models', async (_, apiKey) => {
+ipcMain.handle('fetch-models', async (_, payload) => {
   try {
-    return new Promise((resolve) => {
-      const options = {
-        hostname: 'api.tokito.xyz',
-        path: '/v1/models',
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${apiKey}` },
-        timeout: 10000,
-      };
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (d) => (data += d));
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            resolve({ success: true, data: parsed });
-          } catch (parseErr) {
-            resolve({ error: 'JSON parse error: ' + parseErr.message });
-          }
-        });
-      });
-      req.on('timeout', () => {
-        req.destroy();
-        resolve({ error: 'Request timeout (10s)' });
-      });
-      req.on('error', (e) => resolve({ error: e.message }));
-      req.end();
-    });
+    const apiKey = typeof payload === 'string' ? payload : payload?.apiKey;
+    const baseUrl = typeof payload === 'object' ? payload?.baseUrl : readConfiguredBaseUrl();
+    return await fetchModelsFromApi(apiKey, baseUrl);
   } catch (e) {
     return { error: e.message };
   }
 });
 
-// ─── Fetch model list for grid (no auth needed for public endpoint) ───
+// Fetch model list for grid using saved auth/config.
 ipcMain.handle('fetch-models-list', async () => {
   try {
-    return new Promise((resolve) => {
-      const options = {
-        hostname: 'api.tokito.xyz',
-        path: '/v1/models',
-        method: 'GET',
-        timeout: 10000,
-      };
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (d) => (data += d));
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.data && Array.isArray(parsed.data)) {
-              const models = parsed.data.map((m) => ({
-                id: m.id,
-                owner: m.owned_by || 'unknown',
-              }));
-              resolve({ success: true, models });
-            } else {
-              resolve({ error: 'Unexpected response format' });
-            }
-          } catch (parseErr) {
-            resolve({ error: 'JSON parse error: ' + parseErr.message });
-          }
-        });
-      });
-      req.on('timeout', () => {
-        req.destroy();
-        resolve({ error: 'Request timeout (10s)' });
-      });
-      req.on('error', (e) => resolve({ error: e.message }));
-      req.end();
-    });
+    const result = await fetchModelsFromApi(readApiKey(), readConfiguredBaseUrl());
+    if (!result.success) return result;
+
+    if (result.data?.data && Array.isArray(result.data.data)) {
+      const models = result.data.data.map((m) => ({
+        id: m.id,
+        owner: m.owned_by || 'unknown',
+      }));
+      return { success: true, models, baseUrl: result.baseUrl };
+    }
+
+    return { error: 'Unexpected response format from models API' };
   } catch (e) {
     return { error: e.message };
   }
 });
 
-// ─── Launch Codex CLI ───
-const CODEX_EXE = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.429.3425.0_x64__2p2nqsd0c76g0\\app\\Codex.exe';
-
-ipcMain.handle('launch-codex', () => {
+// Launch the installed Codex desktop app.
+ipcMain.handle('launch-codex', async () => {
   try {
-    const { execFile } = require('child_process');
-    if (fs.existsSync(CODEX_EXE)) {
-      execFile(CODEX_EXE, [], { detached: true, stdio: 'ignore' }).unref();
-    } else {
-      // Fallback: try running 'codex' from PATH
-      exec('start cmd /k codex', { cwd: os.homedir() });
-    }
-    return { success: true };
+    const resolved = await resolveCodexExe();
+    if (!resolved.success) return { error: resolved.error };
+
+    return await new Promise((resolve) => {
+      let settled = false;
+      const child = spawn(resolved.path, [], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false,
+      });
+
+      child.once('error', (e) => {
+        if (settled) return;
+        settled = true;
+        resolve({ error: e.message });
+      });
+
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.unref();
+        resolve({ success: true, path: resolved.path });
+      }, 250);
+    });
   } catch (e) {
     return { error: e.message };
   }
