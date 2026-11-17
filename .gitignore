@@ -4,3 +4,14 @@ dist/
 *.blockmap
 builder-debug.yml
 .icon-ico/
+
+# Security: ignore environment, cPanel, and secret files
+.env
+.env.*
+!.env.example
+!.env.*.example
+cpanel.txt
+*cpanel*.txt
+*CPANEL*.txt
+*secret*.txt
+pwsupersecretcpanel.txt
